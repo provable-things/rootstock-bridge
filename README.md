@@ -22,7 +22,7 @@ Suggested version: node 6.0.0+ / npm 3.8.6+
 ```
 node plugin -H localhost:8545 -a 0
 ```
-(will start the ethereum-bridge on localhost:8545 and use account 0)
+(will start the rootstock-bridge on localhost:8545 and use account 0)
 
 see also [optional flags](#optional-flags)
 
@@ -49,13 +49,13 @@ contract test() {
 ###Optional flags
 
 * optional:
-  * run the script without flags to generate a new local address (private key automatically saved in ethereum-bridge/keys.json)
-  * `--broadcast` : enable offline tx signing (your eth node will be used to broadcast the raw transaction) **the broadcast mode will load your local keys.json file**
+  * run the script without flags to generate a new local address (private key automatically saved in rootstock-bridge/keys.json)
+  * `--broadcast` : enable offline tx signing (your rsk node will be used to broadcast the raw transaction) **the broadcast mode will load your local keys.json file**
   * `-a` : change the default account used to deploy and call the transactions i.e:
     * `node plugin -a 0` : use account 0 on localhost:8545
     * `node plugin -a 0 --broadcast` : use account at index n. 0 in your keys.json file (broadcast mode)
   * `--oar` : to specify the OAR address already deployed i.e. `node plugin --oar EnterYourOarCustomAddress`
-  * `-H` : change the default eth node (localhost:8545)
+  * `-H` : change the default rsk node (localhost:8545)
   * `-p` : change the default PORT (8545) on localhost
   * `--key` : change the default key path (../keys.json) i.e. `node plugin --key /home/user/keys.json` 
   * `--gas` : change the default gas limit (3000000) used to deploy contracts

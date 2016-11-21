@@ -7,13 +7,13 @@ Optimization: Enabled
 
 ###oraclizeConnector.binary
 
-Contract: ethereum-bridge/contracts/ethereum-api/connectors/oraclizeConnector.sol
+Contract: rootstock-bridge/contracts/ethereum-api/connectors/oraclizeConnector.sol
 
 Name: Oraclize
 
 
 ###addressResolver.binary
 
-Contract: ethereum-bridge/contracts/ethereum-api/connectors/addressResolver.sol
+Contract: rootstock-bridge/contracts/ethereum-api/connectors/addressResolver.sol
 
 Name: OraclizeAddrResolver
