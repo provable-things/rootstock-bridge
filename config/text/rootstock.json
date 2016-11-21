@@ -1,0 +1,7 @@
+{
+	"blockchain_abbrv": "rsk",
+	"blockchain_name": "rootstock",
+	"base_unit": "SBTC",
+	"bridge_name": "rootstock-bridge",
+	"connection_failed_tip": "check if your node or this machine is allowed to connect (firewall,port etc..)\n"
+}

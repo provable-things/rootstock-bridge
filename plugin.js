@@ -13,7 +13,7 @@ var readline = require('readline');
 var i18n = require('i18n');
 
 i18n.configure({
-  defaultLocale: 'ethereum',
+  defaultLocale: 'rootstock',
   updateFiles: false,
   objectNotation: true,
   directory: './config/text'
