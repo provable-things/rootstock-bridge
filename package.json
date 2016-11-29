@@ -1,7 +1,7 @@
 {
-  "name": "ethereum-bridge",
+  "name": "rootstock-bridge",
   "version": "0.1.1",
-  "description": "Ethereum logs listener to connect Oraclize onchain events to the Oraclize offchain engine",
+  "description": "Indipendent bridge to link any Rootstock network with the Oraclize engine",
   "main": "plugin.js",
   "dependencies": {
     "asn1": "^0.2.3",
