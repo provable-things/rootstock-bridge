@@ -517,19 +517,31 @@ function OARgenerate(){
 
 function createQuery(query, callback){
   request.post('https://api.oraclize.it/v1/query/create', {body: query, json: true, headers: { 'X-User-Agent': BRIDGE_NAME+'/'+BRIDGE_VERSION+' (nodejs)' }}, function (error, response, body) {
-    if (error) console.error(error);
-    if (response.statusCode == 200) {
-      callback(body);
-    } else console.error("UNEXPECTED ANSWER FROM THE ORACLIZE ENGINE, PLEASE UPGRADE TO THE LATEST "+BRIDGE_NAME.toUpperCase());
+    if (error) {
+      console.error("request error ",error);
+      schedule.scheduleJob(new Date(parseInt(Date.now()+5000)),function(){
+        var newTime = toPositiveNumber(query.when-5);
+        query.when = newTime;
+        createQuery(query,callback);
+      });
+    } else {
+      if (response.statusCode == 200) {
+        callback(body);
+      } else console.error("UNEXPECTED ANSWER FROM THE ORACLIZE ENGINE, PLEASE UPGRADE TO THE LATEST "+BRIDGE_NAME.toUpperCase());
+    }
   });
 }
 
 function queryStatus(query_id, callback){
   request.get('https://api.oraclize.it/v1/query/'+query_id+'/status', {json: true, headers: { 'X-User-Agent': BRIDGE_NAME+'/'+BRIDGE_VERSION+' (nodejs)' }}, function (error, response, body) {
-    if (error) console.error(error);
-    if (response.statusCode == 200) {
-      callback(body);
-    } else console.error("UNEXPECTED ANSWER FROM THE ORACLIZE ENGINE, PLEASE UPGRADE TO THE LATEST "+BRIDGE_NAME.toUpperCase());
+    if (error) {
+      console.error("request error ",error);
+      callback({"result":{}});
+    } else {
+      if (response.statusCode == 200) {
+        callback(body);
+      } else console.error("UNEXPECTED ANSWER FROM THE ORACLIZE ENGINE, PLEASE UPGRADE TO THE LATEST "+BRIDGE_NAME.toUpperCase());
+    }
   });
 }
 
@@ -570,16 +582,16 @@ function runLog(){
   }
 
   // Log1 event
-  contract.Log1([], [], function(err, data){
+  contract.Log1([{}], [{"fromBlock":"latest","toBlock":"latest"}], function(err, data){
     if (err == null){
       handleLog(data);
-    }
+    } else console.error(err);
   });
   // Log2 event
-  contract.Log2([], [], function(err, data){
+  contract.Log2([{}], [{"fromBlock":"latest","toBlock":"latest"}], function(err, data){
     if (err == null){
       handleLog(data);
-    }
+    } else console.error(err);
   });
 
   console.log('Listening @ '+oraclizeC+' (Oraclize Connector)\n');
@@ -613,6 +625,7 @@ function runLog(){
     console.log(JSON.stringify(query));
     if(!myIdList[myIdInitial] && counter>0 || myIdList[myIdInitial]) return;
     createQuery(query, function(data){
+      if(typeof data.result.id === undefined && counter<=10) return;
       counter++;
       console.log("Query : "+JSON.stringify(data)); 
       myid = data.result.id;
@@ -720,9 +733,14 @@ function loadHandler(){
 
 function getQueryUnixTime(time,unixTime){
   if(time<unixTime && time>1420000000) return 0;
-  if(time<1420000000 && time>5) return parseInt(unixTime+time);
-  if(time>1420000000) return parseInt(time);
+  if(time<1420000000 && time>5) return toPositiveNumber(unixTime+time);
+  if(time>1420000000) return toPositiveNumber(time);
   return 0;
+}
+
+function toPositiveNumber(number){
+  if(number<0) return 0;
+  else return parseInt(number);
 }
 
 function checkQueryStatus(queryDoc,myid,myIdInitial,contractAddress,proofType,gasLimit){
