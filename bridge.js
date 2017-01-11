@@ -44,7 +44,7 @@ if (!fs.existsSync(dbConfig.database)) {
 var db = new DbSchema(dbConfig.driver, dbConfig)
 
 i18n.configure({
-  defaultLocale: 'ethereum',
+  defaultLocale: 'rootstock',
   updateFiles: false,
   objectNotation: true,
   directory: './config/text'
