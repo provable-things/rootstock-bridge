@@ -1,6 +1,6 @@
 {
   "name": "rootstock-bridge",
-  "version": "0.2.3",
+  "version": "0.3.3",
   "description": "Indipendent bridge to link any Rootstock network with the Oraclize engine",
   "main": "bridge.js",
   "dependencies": {
@@ -16,13 +16,14 @@
     "ethereumjs-util": "5.0.1",
     "i18n": "0.8.3",
     "multihashes": "0.3.1",
+    "node-async-loop": "^1.2.2",
     "node-schedule": "^1.2.0",
     "request": "^2.78.0",
     "stdio": "0.2.7",
     "tingodb": "0.5.1",
     "underscore": "1.8.3",
     "web3": "0.18.2",
-    "winston": "^2.3.0"
+    "winston": "^2.3.1"
   },
   "devDependencies": {
     "standard": "^8.6.0"
