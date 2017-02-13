@@ -417,8 +417,10 @@ function processPendingQueries (oar, connector, cbAddress) {
         logger.warn('forcing the resume of all pending queries')
       }
       asyncLoop(pendingQueries, function (thisPendingQuery, next) {
-        if (thisPendingQuery.callback_error === true) logger.warn('skipping', thisPendingQuery.contract_myid, 'because of __callback tx error')
-        else if (thisPendingQuery.retry_number < 3 || resumeQueries) {
+        if (thisPendingQuery.callback_error === true) {
+          logger.warn('skipping', thisPendingQuery.contract_myid, 'because of __callback tx error')
+          return next(null)
+        } else if (thisPendingQuery.retry_number < 3 || resumeQueries) {
           var targetUnix = parseInt(thisPendingQuery.target_timestamp)
           var queryTimeDiff = targetUnix < parseInt(Date.now() / 1000) ? 0 : targetUnix
           logger.info('re-processing query', {'contact_address:': thisPendingQuery.contact_address, 'contact_myid': thisPendingQuery.contract_myid, 'http_myid': thisPendingQuery.http_myid})
@@ -428,10 +430,13 @@ function processPendingQueries (oar, connector, cbAddress) {
             var targetDate = new Date(targetUnix * 1000)
             processQueryInFuture(targetDate, thisPendingQuery)
           }
-        } else logger.warn('skipping', thisPendingQuery.contract_myid, 'query, exceeded 3 retries')
+        } else {
+          logger.warn('skipping', thisPendingQuery.contract_myid, 'query, exceeded 3 retries')
+          return next(null)
+        }
         setTimeout(function () {
           next(null)
-        }, 1001)
+        }, 1000)
       }, function (err) {
         if (err) logger.error('Pending query error', err)
       })
@@ -885,7 +890,7 @@ function handleLog (data) {
       proof_type: bridgeUtil.toInt(proofType)
     }
     createQuery(query, function (data) {
-      if (typeof data.result.id === 'undefined') return logger.error('no HTTP myid found, skipping log...')
+      if (typeof data !== 'object' || typeof data.result === 'undefined' || typeof data.result.id === 'undefined') return logger.error('no HTTP myid found, skipping log...')
       myid = data.result.id
       logger.info('new HTTP query created, id: ' + myid)
       var unixTime = parseInt(Date.now() / 1000)
@@ -933,6 +938,10 @@ function checkQueryStatus (myid, myIdInitial, contractAddress, proofType, gasLim
     if (callbackRunning === true) return
     queryStatus(myid, function (data) {
       logger.info(myid, 'HTTP query result: ', data)
+      if (typeof data !== 'object' || typeof data.result === 'undefined') {
+        clearInterval(interval)
+        return logger.error('HTTP query status error')
+      }
       if (typeof data.result.active === 'undefined' || typeof data.result.bridge_request_error !== 'undefined') return
       if (data.result.active === true) return
       var dataProof = null
@@ -991,7 +1000,7 @@ function queryComplete (gasLimit, myid, result, proof, contractAddr, proofType) 
       if (findErr !== null) return queryCompleteErrors(findErr)
       if (alreadyCalled === true) return queryCompleteErrors('queryComplete error, __callback for contract myid', myid, 'was already called before, skipping...')
       var callbackData = bridgeUtil.callbackTxEncode(myid, result, proof, proofType)
-      logger.info('sending __callback tx...')
+      logger.info('sending __callback tx...', {"contract_myid": myid, "contract_address": contractAddr})
       activeOracleInstance.sendTx({'from': activeOracleInstance.account, 'to': bridgeCore.ethUtil.addHexPrefix(contractAddr), 'gas': gasLimit, 'data': callbackData}, function (err, contract) {
         var callbackObj = {'myid': myid, 'result': result, 'proof': proof}
         if (err) {
@@ -1095,7 +1104,7 @@ function createQuery (query, callback) {
     } else {
       if (response.statusCode === 200) {
         callback(body)
-      } else console.error('UNEXPECTED ANSWER FROM THE ORACLIZE ENGINE, PLEASE UPGRADE TO THE LATEST ' + BRIDGE_NAME.toUpperCase())
+      } else logger.error('UNEXPECTED ANSWER FROM THE ORACLIZE ENGINE, PLEASE UPGRADE TO THE LATEST ' + BRIDGE_NAME.toUpperCase())
     }
   })
 }
@@ -1108,7 +1117,7 @@ function queryStatus (queryId, callback) {
     } else {
       if (response.statusCode === 200) {
         callback(body)
-      } else console.error('UNEXPECTED ANSWER FROM THE ORACLIZE ENGINE, PLEASE UPGRADE TO THE LATEST ' + BRIDGE_NAME.toUpperCase())
+      } else logger.error('UNEXPECTED ANSWER FROM THE ORACLIZE ENGINE, PLEASE UPGRADE TO THE LATEST ' + BRIDGE_NAME.toUpperCase())
     }
   })
 }
