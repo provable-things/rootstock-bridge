@@ -118,7 +118,7 @@ var ops = stdio.getopt({
   'url': {key: 'u', args: 1, description: BLOCKCHAIN_ABBRV + ' node URL (default: http://' + defaultnode + ')'},
   'HOST': {key: 'H', args: 1, description: BLOCKCHAIN_ABBRV + ' node IP:PORT (default: ' + defaultnode + ')'},
   'port': {key: 'p', args: 1, description: BLOCKCHAIN_ABBRV + ' node localhost port (default: 8545)'},
-  'address': {key: 'a', args: 1, description: 'unlocked address used to deploy Oraclize connector and OAR'},
+  'account': {key: 'a', args: 1, description: 'unlocked account used to deploy Oraclize connector and OAR'},
   'broadcast': {description: 'broadcast only mode, a json key file with the private key is mandatory to sign all transactions'},
   'gas': {args: 1, description: 'change gas amount limit used to deploy contracts(in wei) (default: ' + defaultGas + ')'},
   'key': {args: 1, description: 'JSON key file path (default: ' + keyFilePath + ')'},
@@ -131,6 +131,7 @@ var ops = stdio.getopt({
   'abiconn': {args: 1, description: 'Load custom connector abi interface (path)'},
   'abioar': {args: 1, description: 'Load custom oar abi interface (path)'},
   'newconn': {description: 'Generate and update the OAR with the new connector address'},
+  'disable-deterministic-oar': {description: 'Disable deterministic oar'},
   'update-ds': {description: 'Update datasource price (pricing is taken from the oracle instance configuration file)'},
   'update-price': {description: 'Update base price (pricing is taken from the oracle instance configuration file)'},
   'remote-price': {description: 'Use the remote API to get the pricing info'},
@@ -234,11 +235,11 @@ if (ops.broadcast) {
   try {
     var privateKeyContent = fs.readFileSync(keyFilePath)
     if (JSON.parse(privateKeyContent.toString()).length > 0) {
-      ops.address = 0
-    } else if (ops.address) {
+      if (!ops.account) ops.account = 0
+    } else if (ops.account) {
       ops.new = true
-      logger.error('no account', ops.address, 'found in your keys.json file, automatically removing the -a option...')
-      ops.address = null
+      logger.error('no account', ops.account, 'found in your keys.json file, automatically removing the -a option...')
+      ops.account = null
     }
   } catch (err) {
     if (err.code === 'ENOENT') {
@@ -254,6 +255,11 @@ if (ops.broadcast) {
 }
 
 logger.info('saving logs to:', logFilePath)
+
+var deterministicOar = true
+if (ops['disable-deterministic-oar']) {
+  deterministicOar = false
+}
 
 var oraclizeConfiguration = {
   'oar': ops.oar,
@@ -273,8 +279,9 @@ var oraclizeConfiguration = {
       'source': toFullPath('./contracts/ethereum-api/connectors/addressResolver.sol')
     }
   },
+  'deterministic_oar': deterministicOar,
   'deploy_gas': defaultGas,
-  'account': ops.address,
+  'account': ops.account,
   'mode': mode,
   'key_file': keyFilePath
 }
@@ -308,7 +315,7 @@ if (ops.instance) {
     logger.error(instanceToLoad + ' not found in ./config/instance/')
   }
 } else if (!ops.oar) {
-  if (ops.new && ops.address) throw new Error("--new flag doesn't require the -a flag")
+  if (ops.new && ops.account) throw new Error("--new flag doesn't require the -a flag")
   if (ops.new && ops.broadcast) {
     bridgeUtil.generateNewAddress(keyFilePath, function (err, res) {
       if (err) throw new Error(err)
@@ -608,7 +615,11 @@ function deployOraclize () {
     },
     function deployOAR (result, callback) {
       logger.info('connector deployed to:', result.connector)
-      logger.info('deploying the address resolver contract...')
+      if (deterministicOar === true && bridgeCore.getAccountNonce(bridgeCore.getTempAccount()) === 0) logger.info('deploying the address resolver with a deterministic address...')
+      else {
+        logger.warn('deterministic OAR disabled/not available, please update your contract with the new custom address generated')
+        logger.info('deploying the address resolver contract...')
+      }
       activeOracleInstance.deployOAR(callback)
     },
     function setPricing (result, callback) {
@@ -1000,7 +1011,7 @@ function queryComplete (gasLimit, myid, result, proof, contractAddr, proofType) 
       if (findErr !== null) return queryCompleteErrors(findErr)
       if (alreadyCalled === true) return queryCompleteErrors('queryComplete error, __callback for contract myid', myid, 'was already called before, skipping...')
       var callbackData = bridgeUtil.callbackTxEncode(myid, result, proof, proofType)
-      logger.info('sending __callback tx...', {"contract_myid": myid, "contract_address": contractAddr})
+      logger.info('sending __callback tx...', {'contract_myid': myid, 'contract_address': contractAddr})
       activeOracleInstance.sendTx({'from': activeOracleInstance.account, 'to': bridgeCore.ethUtil.addHexPrefix(contractAddr), 'gas': gasLimit, 'data': callbackData}, function (err, contract) {
         var callbackObj = {'myid': myid, 'result': result, 'proof': proof}
         if (err) {
