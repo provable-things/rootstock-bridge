@@ -77,13 +77,13 @@ var defaultGas = 3000000
 var resumeQueries = false
 var skipQueries = false
 var confirmations = 12
-var callbackRunning = false
 var reorgRunning = false
 var latestBlockNumber = -1
 var isTestRpc = false
 var reorgInterval = []
 var blockRangeResume = []
 var pricingInfo = []
+var officialOar = []
 var basePrice = 0 // in ETH
 
 var ops = stdio.getopt({
@@ -467,6 +467,14 @@ function checkNodeConnection () {
     var nodeType = BlockchainInterface().version.node
     isTestRpc = nodeType.match(/TestRPC/i) ? true : false
     logger.info('connected to node type', nodeType)
+    try {
+      for (var i = officialOar.length - 1; i >= 0; i--) {
+        var oarCode = bridgeCore.ethUtil.addHexPrefix(BlockchainInterface().inter.getCode(officialOar[i], 'latest'))
+        if (oarCode === null || oarCode === '0x' || oarCode === '0x0') officialOar.splice(i, 1)
+      }
+    } catch (e) {
+      officialOar = []
+    }
   }
 }
 
@@ -492,7 +500,7 @@ function checkBridgeVersion (callback) {
     if (error) return callback(error, null)
     try {
       if (response.statusCode === 200) {
-        if (!(BRIDGE_NAME in body.result.distributions)) return callback(new Error('Bridge name not found'), null)
+        if (typeof body !== 'object' || !(BRIDGE_NAME in body.result.distributions)) return callback(new Error('Bridge name not found'), null)
         var latestVersion = body.result.distributions[BRIDGE_NAME].latest.version
         if (versionCompare(BRIDGE_VERSION, latestVersion) === -1) {
           logger.warn('\n************************************************************************\nA NEW VERSION OF THIS TOOL HAS BEEN DETECTED\nIT IS HIGHLY RECOMMENDED THAT YOU ALWAYS RUN THE LATEST VERSION, PLEASE UPGRADE TO ' + BRIDGE_NAME.toUpperCase() + ' ' + latestVersion + '\n************************************************************************\n')
@@ -509,8 +517,14 @@ function checkBridgeVersion (callback) {
               pricingInfo.push({'name': thisDatasource.name, 'proof': thisDatasource.proof_types[j] + 1, 'units': units})
             }
           }
-          return callback(null, true)
         }
+        if (typeof body.result.deployments !== 'undefined' && BLOCKCHAIN_NAME in body.result.deployments) {
+          var deployments = body.result.deployments[BLOCKCHAIN_NAME]
+          Object.keys(deployments).forEach(function (key) {
+            officialOar.push(deployments[key]['addressResolver'])
+          })
+        }
+        return callback(null, true)
       } else return callback(new Error(response.statusCode, 'HTTP status', null))
     } catch (e) {
       return callback(e, null)
@@ -603,17 +617,17 @@ function deployOraclize () {
     },
     function setPricing (result, callback) {
       oraclizeConfiguration.oar = result.oar
+      logger.info('address resolver (OAR) deployed to:', oraclizeConfiguration.oar)
       if (ops['disable-price'] === true || pricingInfo.length === 0 || basePrice <= 0) {
         logger.warn('skipping pricing update...')
         callback(null, null)
       } else {
-        logger.info('updating pricing...')
+        logger.info('updating connector pricing...')
         activeOracleInstance.setPricing(activeOracleInstance.connector, callback)
       }
     }
   ], function (err, result) {
     if (err) throw new Error(err)
-    logger.info('address resolver (OAR) deployed to:', oraclizeConfiguration.oar)
     logger.info('successfully deployed all contracts')
     oraclizeConfiguration.connector = activeOracleInstance.connector
     oraclizeConfiguration.account = activeOracleInstance.account
@@ -642,6 +656,8 @@ function checkVersion () {
 }
 
 function runLog () {
+  if (officialOar.length === 1) logger.info('an "official" Oraclize address resolver was found on your blockchain:', officialOar[0], 'you can use that instead and quit the bridge')
+
   var checksumOar = bridgeCore.ethUtil.toChecksumAddress(activeOracleInstance.oar)
   if (checksumOar === '0x6f485C8BF6fc43eA212E93BBF8ce046C7f1cb475') logger.info('you are using a deterministic OAR, you don\'t need to update your contract')
   else console.log('\nPlease add this line to your contract constructor:\n\n' + 'OAR = OraclizeAddrResolverI(' + checksumOar + ');\n')
@@ -860,7 +876,6 @@ function checkQueryStatus (myid, myIdInitial, contractAddress, proofType, gasLim
   if (typeof myid === 'undefined') return logger.error('checkQueryStatus error, http myid provided is invalid')
   logger.info('checking HTTP query', myid, 'status every 5 seconds...')
   var interval = setInterval(function () {
-    if (callbackRunning === true) return
     queryStatus(myid, function (data) {
       logger.info(myid, 'HTTP query result: ', data)
       if (typeof data !== 'object' || typeof data.result === 'undefined') {
@@ -915,7 +930,6 @@ function getProof (proofContent, proofType) {
 function queryComplete (gasLimit, myid, result, proof, contractAddr, proofType) {
   // if(/*|| queryDoc.callback_complete==true*/) return;
   try {
-    callbackRunning = true
     // queryDoc.callback_complete = true;
     // updateQueriesDB(queryDoc);
     if (typeof gasLimit === 'undefined' || typeof myid === 'undefined' || typeof contractAddr === 'undefined' || typeof proofType === 'undefined') {
@@ -932,13 +946,12 @@ function queryComplete (gasLimit, myid, result, proof, contractAddr, proofType) 
           updateQuery(callbackObj, null, err)
           return logger.error('callback tx error, contract myid: ' + myid, err)
         }
-        logger.info('Contract ' + contractAddr + ' __callback called', callbackObj)
+        logger.info('contract ' + contractAddr + ' __callback tx confirmed, transaction hash:', contract.transactionHash, callbackObj)
         updateQuery(callbackObj, contract, null)
       })
     })
   } catch (e) {
     logger.error('queryComplete error ', e)
-    callbackRunning = false
   }
 }
 
@@ -949,7 +962,11 @@ function checkCallbackTx (myid, callback) {
     if (res === null) return callback(new Error('queryComplete error, query with contract myid ' + myid + ' not found in database'), null)
     if (typeof res.callback_complete === 'undefined') return callback(new Error('queryComplete error, query with contract myid ' + myid), null)
     if (res.callback_complete === true) return callback(null, true)
-    else return callback(null, false)
+    else {
+      var eventTx = BlockchainInterface().inter.getTransaction(res.event_tx)
+      if (typeof eventTx === 'undefined' || eventTx.blockHash === null || eventTx.blockHash !== res.block_tx_hash) return callback(new Error('queryComplete error, query with contract myid ' + myid + ' mismatch with block hash stored'), null)
+      return callback(null, false)
+    }
   })
 }
 
@@ -988,7 +1005,6 @@ function manageErrors (err) {
 }
 
 function queryCompleteErrors (err) {
-  callbackRunning = false
   logger.error(err)
   if (err) {
     manageErrors(err)
@@ -1006,12 +1022,10 @@ function updateQuery (callbackInfo, contract, errors) {
   Query.update({where: {'contract_myid': callbackInfo.myid}}, dataDbUpdate, function (err, res) {
     if (err) logger.error('queries database update failed for query with contract myid', callbackInfo.myid)
     if (contract === null) {
-      callbackRunning = false
       return logger.error('transaction hash not found, callback tx database not updated', contract)
     }
     CallbackTx.create({'contract_myid': callbackInfo.myid, 'tx_hash': contract.transactionHash, 'contract_address': contract.to, 'result': callbackInfo.result, 'proof': callbackInfo.proof, 'gas_limit': contract.gasUsed, 'errors': errors}, function (err, res) {
       if (err) logger.error('failed to add a new transaction to database', err)
-      callbackRunning = false
     })
   })
 }
