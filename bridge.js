@@ -803,6 +803,7 @@ function handleLog (data) {
     if (ops.dev !== true && myIdList.indexOf(myIdInitial) > -1) return
     myIdList.push(myIdInitial)
     latestBlockNumber = BlockchainInterface().inter.blockNumber
+    if (typeof data.removed !== 'undefined' && data.removed === true) return logger.error('this log was removed because of orphaned block, rejected tx or re-org, skipping...')
     var myid = myIdInitial
     var cAddr = data['sender']
     var ds = data['datasource']
@@ -811,15 +812,16 @@ function handleLog (data) {
       if (typeof data['arg'] === 'undefined') return logger.error('error, Log1 event is missing "arg", skipping...')
       if (data['arg'] === false) return logger.error('malformed log, skipping...')
       formula = data['arg']
-    } else if (logObj['event'] === 'LogN') {
-      if (typeof data['args'] === 'undefined') return logger.error('error, LogN event is missing "args", skipping...')
-      if (data['args'] === false) return logger.error('malformed log, skipping...')
-      formula = cbor.decodeAllSync(new Buffer(data['args'].substr(2), 'hex'))[0]
     } else if (logObj['event'] === 'Log2') {
       if (typeof data['arg1'] === 'undefined' && typeof data['arg2'] === 'undefined') return logger.error('error, Log2 event is missing "arg1" and "arg2", skipping...')
       if (data['arg1'] === false || data['arg2'] === false) return logger.error('malformed log, skipping...')
       formula = [data['arg1'], data['arg2']]
+    } else if (logObj['event'] === 'LogN') {
+      if (typeof data['args'] === 'undefined') return logger.error('error, LogN event is missing "args", skipping...')
+      if (data['args'] === false) return logger.error('malformed log, skipping...')
+      formula = cbor.decodeAllSync(new Buffer(data['args'].substr(2), 'hex'))[0]
     }
+
     var time = data['timestamp'].toNumber()
     var gasLimit = data['gaslimit'].toNumber()
     var proofType = bridgeCore.ethUtil.addHexPrefix(data['proofType'])
@@ -835,7 +837,7 @@ function handleLog (data) {
       myid = data.result.id
       logger.info('new HTTP query created, id: ' + myid)
       var unixTime = moment().unix()
-      var queryCheckUnixTime = getQueryUnixTime(time, unixTime)
+      var queryCheckUnixTime = bridgeUtil.getQueryUnixTime(time, unixTime)
       Query.create({'active': true, 'callback_complete': false, 'retry_number': 0, 'target_timestamp': queryCheckUnixTime, 'oar': activeOracleInstance.oar, 'connector': activeOracleInstance.connector, 'cbAddress': activeOracleInstance.account, 'http_myid': myid, 'contract_myid': myIdInitial, 'query_delay': time, 'query_arg': JSON.stringify(formula), 'query_datasource': ds, 'contract_address': cAddr, 'event_tx': eventTx, 'block_tx_hash': blockHashTx, 'proof_type': proofType, 'gas_limit': gasLimit}, function (err, res) {
         if (err !== null) logger.error('query db create error', err)
         if (queryCheckUnixTime <= 0) {
@@ -845,31 +847,12 @@ function handleLog (data) {
           var targetDate = moment(queryCheckUnixTime, 'X').toDate()
           processQueryInFuture(targetDate, {'active': true, 'callback_complete': false, 'retry_number': 0, 'target_timestamp': queryCheckUnixTime, 'oar': activeOracleInstance.oar, 'connector': activeOracleInstance.connector, 'cbAddress': activeOracleInstance.account, 'http_myid': myid, 'contract_myid': myIdInitial, 'query_delay': time, 'query_arg': JSON.stringify(formula), 'query_datasource': ds, 'contract_address': cAddr, 'event_tx': eventTx, 'block_tx_hash': blockHashTx, 'proof_type': proofType, 'gas_limit': gasLimit})
         }
-        myIdList = arrayCleanUp(myIdList)
+        myIdList = bridgeUtil.arrayCleanUp(myIdList)
       })
     })
   } catch (e) {
     logger.error('handle log error ', e)
   }
-}
-
-function arrayCleanUp (array) {
-  if (Object.keys(array).length > 15) {
-    array.splice(0, array.length - 15)
-    return array
-  } else return array
-}
-
-function getQueryUnixTime (time, unixTime) {
-  if (time < unixTime && time > 1420000000) return 0
-  if (time < 1420000000 && time > 5) return toPositiveNumber(unixTime + time)
-  if (time > 1420000000) return toPositiveNumber(time)
-  return 0
-}
-
-function toPositiveNumber (number) {
-  if (number < 0) return 0
-  else return parseInt(number)
 }
 
 function checkQueryStatus (myid, myIdInitial, contractAddress, proofType, gasLimit) {
@@ -885,9 +868,8 @@ function checkQueryStatus (myid, myIdInitial, contractAddress, proofType, gasLim
       if (typeof data.result.active === 'undefined' || typeof data.result.bridge_request_error !== 'undefined') return
       if (data.result.active === true) return
       var dataProof = null
-      if (checkErrors(data) === true) {
-        // queryDoc.active = false;
-        // updateQueriesDB(queryDoc);
+      if (bridgeUtil.checkErrors(data) === true) {
+        logger.error('HTTP query error', bridgeUtil.getQueryError(data))
         clearInterval(interval)
         var dataResult = null
         var proofResult = null
@@ -896,7 +878,7 @@ function checkQueryStatus (myid, myIdInitial, contractAddress, proofType, gasLim
           var queryResultWithError = lastQueryCheck.results[lastQueryCheck.results.length - 1]
           var queryProofWithError = data.result.checks[data.result.checks.length - 1]['proofs'][0]
           if (queryResultWithError !== null) dataResult = queryResultWithError
-          if (queryProofWithError !== null) proofResult = getProof(queryProofWithError, proofType)
+          if (queryProofWithError !== null) proofResult = bridgeUtil.getProof(queryProofWithError, proofType)
         }
         queryComplete(gasLimit, myIdInitial, dataResult, proofResult, contractAddress, proofType)
         return
@@ -907,31 +889,15 @@ function checkQueryStatus (myid, myIdInitial, contractAddress, proofType, gasLim
       var queryResult = lastCheck.results[lastCheck.results.length - 1]
       var dataRes = queryResult
       if (bridgeUtil.containsProof(proofType)) {
-        dataProof = getProof(data.result.checks[data.result.checks.length - 1]['proofs'][0], proofType)
+        dataProof = bridgeUtil.getProof(data.result.checks[data.result.checks.length - 1]['proofs'][0], proofType)
       }
-      // queryDoc.active = false;
-      // updateQueriesDB(queryDoc);
       queryComplete(gasLimit, myIdInitial, dataRes, dataProof, contractAddress, proofType)
     })
   }, 5000)
 }
 
-function getProof (proofContent, proofType) {
-  if (!bridgeUtil.containsProof(proofType)) return null
-  if (proofContent === null) {
-    return new Buffer('')
-  } else if (typeof proofContent === 'object') {
-    if (typeof proofContent.type !== 'undefined' && typeof proofContent.value !== 'undefined') {
-      return Buffer.from(proofContent.value, 'hex')
-    }
-  } else return proofContent
-}
-
 function queryComplete (gasLimit, myid, result, proof, contractAddr, proofType) {
-  // if(/*|| queryDoc.callback_complete==true*/) return;
   try {
-    // queryDoc.callback_complete = true;
-    // updateQueriesDB(queryDoc);
     if (typeof gasLimit === 'undefined' || typeof myid === 'undefined' || typeof contractAddr === 'undefined' || typeof proofType === 'undefined') {
       return queryCompleteErrors('queryComplete error, __callback arguments are empty')
     }
@@ -969,11 +935,12 @@ function checkCallbackTx (myid, callback) {
     if (res === null) return callback(new Error('queryComplete error, query with contract myid ' + myid + ' not found in database'), null)
     if (typeof res.callback_complete === 'undefined') return callback(new Error('queryComplete error, query with contract myid ' + myid), null)
     if (res.callback_complete === true) return callback(null, true)
-    else {
+    else return callback(null, false)
+    /* else {
       var eventTx = BlockchainInterface().inter.getTransaction(res.event_tx)
       if (eventTx === null || eventTx.blockHash === null || eventTx.blockHash !== res.block_tx_hash) return callback(new Error('queryComplete error, query with contract myid ' + myid + ' mismatch with block hash stored'), null)
       return callback(null, false)
-    }
+    } */
   })
 }
 
@@ -1043,7 +1010,7 @@ function createQuery (query, callback) {
       logger.error('HTTP query create request error ', error)
       logger.info('re-trying to create the query again in 5 seconds...')
       schedule.scheduleJob(moment().add(5, 'seconds').toDate(), function () {
-        var newTime = toPositiveNumber(query.when - 5)
+        var newTime = bridgeUtil.toPositiveNumber(query.when - 5)
         query.when = newTime
         createQuery(query, callback)
       })
@@ -1066,30 +1033,6 @@ function queryStatus (queryId, callback) {
       } else logger.error('UNEXPECTED ANSWER FROM THE ORACLIZE ENGINE, PLEASE UPGRADE TO THE LATEST ' + BRIDGE_NAME.toUpperCase())
     }
   })
-}
-
-function checkErrors (data) {
-  try {
-    if (!('result' in data)) {
-      logger.error('no result')
-      return false
-    } else if ('checks' in data.result) {
-      if (data.result.checks.length === 0) return true
-      var lastCheck = data.result.checks[data.result.checks.length - 1]
-      if (typeof lastCheck['errors'][0] !== 'undefined') {
-        logger.error('HTTP query error', lastCheck.errors)
-        return true
-      }
-    } else {
-      if (data.result['errors'].length > 0) {
-        logger.error('HTTP query error', data.result.errors)
-        return true
-      }
-    }
-  } catch (e) {
-    logger.error('Query error', e)
-    return true
-  }
 }
 
 process.on('exit', function () {
