@@ -150,9 +150,9 @@ var logger = new (winston.Logger)({
 
 if (ops.from && ops.to) {
   if (ops.to === 'latest' || ops.from === 'latest') throw new Error('latest is not allowed')
-  if (ops.to < ops.from) throw new Error('toBlock should be > of fromBlock')
+  if (ops.from < ops.to) throw new Error('toBlock should be above fromBlock')
   blockRangeResume = [ops.from, ops.to]
-  logger.info('block range to resume:', blockRangeResume)
+  logger.info('block range to resume:', JSON.stringify(blockRangeResume))
 } else if (ops.from && !ops.to) throw new Error('--from flag requires the --to flag')
 else if (!ops.from && ops.to) throw new Error('--to flag requires the --from flag')
 
@@ -685,7 +685,7 @@ function runLog () {
 
   if (blockRangeResume.length === 2) {
     setTimeout(function () {
-      logger.info('resuming logs from block range:', blockRangeResume)
+      logger.info('resuming logs from block range:', JSON.stringify(blockRangeResume))
       BridgeLogManager.fetchLogsByBlock(parseInt(blockRangeResume[0]), parseInt(blockRangeResume[1]))
     }, 5000)
   }
@@ -938,9 +938,16 @@ function queryComplete (gasLimit, myid, result, proof, contractAddr, proofType) 
     checkCallbackTx(myid, function (findErr, alreadyCalled) {
       if (findErr !== null) return queryCompleteErrors(findErr)
       if (alreadyCalled === true) return queryCompleteErrors('queryComplete error, __callback for contract myid', myid, 'was already called before, skipping...')
-      var callbackData = bridgeUtil.callbackTxEncode(myid, result, proof, proofType)
-      logger.info('sending __callback tx...', {'contract_myid': myid, 'contract_address': contractAddr})
-      activeOracleInstance.sendTx({'from': activeOracleInstance.account, 'to': bridgeCore.ethUtil.addHexPrefix(contractAddr), 'gas': gasLimit, 'data': callbackData}, function (err, contract) {
+      var callbackObj = {
+        'myid': myid,
+        'result': result,
+        'proof': proof,
+        'proof_type': proofType,
+        'contract_address': bridgeCore.ethUtil.addHexPrefix(contractAddr),
+        'gas_limit': gasLimit
+      }
+      logger.info('sending __callback tx...', {'contract_myid': callbackObj.myid, 'contract_address': callbackObj.contract_address})
+      activeOracleInstance.__callback(callbackObj, function (err, contract) {
         var callbackObj = {'myid': myid, 'result': result, 'proof': proof}
         if (err) {
           updateQuery(callbackObj, null, err)
@@ -964,7 +971,7 @@ function checkCallbackTx (myid, callback) {
     if (res.callback_complete === true) return callback(null, true)
     else {
       var eventTx = BlockchainInterface().inter.getTransaction(res.event_tx)
-      if (typeof eventTx === 'undefined' || eventTx.blockHash === null || eventTx.blockHash !== res.block_tx_hash) return callback(new Error('queryComplete error, query with contract myid ' + myid + ' mismatch with block hash stored'), null)
+      if (eventTx === null || eventTx.blockHash === null || eventTx.blockHash !== res.block_tx_hash) return callback(new Error('queryComplete error, query with contract myid ' + myid + ' mismatch with block hash stored'), null)
       return callback(null, false)
     }
   })
