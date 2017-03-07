@@ -84,6 +84,7 @@ var reorgInterval = []
 var blockRangeResume = []
 var pricingInfo = []
 var officialOar = []
+var currentInstance = 'latest'
 var basePrice = 0 // in ETH
 
 var ops = stdio.getopt({
@@ -267,15 +268,7 @@ if (ops.abiconn || ops.abioar) {
 
 if (ops.instance) {
   var instanceToLoad = ops.instance
-  var instances = fs.readdirSync('./config/instance/')
-  var instanceKeyIndex = instances.indexOf('keys.json')
-  if (instanceKeyIndex > -1) {
-    instances.splice(instanceKeyIndex, 1)
-  }
-  var keepFile = instances.indexOf('.keep')
-  if (keepFile > -1) {
-    instances.splice(keepFile, 1)
-  }
+  var instances = getInstances()
   if (instances.length === 0) throw new Error('no instance files found')
   if (instanceToLoad !== 'latest' && instanceToLoad.indexOf('.json') === -1) {
     instanceToLoad += '.json'
@@ -288,6 +281,7 @@ if (ops.instance) {
   } else {
     logger.error(instanceToLoad + ' not found in ./config/instance/')
   }
+  currentInstance = instanceToLoad
 } else if (!ops.oar) {
   if (ops.new && ops.account) throw new Error("--new flag doesn't require the -a flag")
   if (ops.new && ops.broadcast) {
@@ -302,6 +296,19 @@ if (ops.instance) {
 } else {
   if (ops.new) throw new Error('cannot generate a new address if contracts are already deployed, please remove the --new flag')
   startUpLog(false, oraclizeConfiguration)
+}
+
+function getInstances () {
+  var instances = fs.readdirSync('./config/instance/')
+  var instanceKeyIndex = instances.indexOf('keys.json')
+  if (instanceKeyIndex > -1) {
+    instances.splice(instanceKeyIndex, 1)
+  }
+  var keepFile = instances.indexOf('.keep')
+  if (keepFile > -1) {
+    instances.splice(keepFile, 1)
+  }
+  return instances
 }
 
 function toFullPath (filePath) {
@@ -631,7 +638,9 @@ function deployOraclize () {
     logger.info('successfully deployed all contracts')
     oraclizeConfiguration.connector = activeOracleInstance.connector
     oraclizeConfiguration.account = activeOracleInstance.account
-    configFilePath = toFullPath('./config/instance/oracle_instance_' + moment().unix() + '.json')
+    var oraclizeInstanceNewName = 'oracle_instance_' + moment().format('YYYYMMDDTHHmmss') + '.json'
+    configFilePath = toFullPath('./config/instance/' + oraclizeInstanceNewName)
+    currentInstance = oraclizeInstanceNewName
     try {
       bridgeUtil.saveJsonFile(configFilePath, oraclizeConfiguration)
       logger.info('instance configuration file saved to ' + configFilePath)
@@ -823,6 +832,9 @@ function handleLog (data) {
     }
 
     var time = data['timestamp'].toNumber()
+    var unixTime = moment().unix()
+    if (!bridgeUtil.isValidTime(time, unixTime)) return logger.error('the query is too far in the future, skipping event...')
+
     var gasLimit = data['gaslimit'].toNumber()
     var proofType = bridgeCore.ethUtil.addHexPrefix(data['proofType'])
     var query = {
@@ -836,7 +848,6 @@ function handleLog (data) {
       if (typeof data !== 'object' || typeof data.result === 'undefined' || typeof data.result.id === 'undefined') return logger.error('no HTTP myid found, skipping log...')
       myid = data.result.id
       logger.info('new HTTP query created, id: ' + myid)
-      var unixTime = moment().unix()
       var queryCheckUnixTime = bridgeUtil.getQueryUnixTime(time, unixTime)
       Query.create({'active': true, 'callback_complete': false, 'retry_number': 0, 'target_timestamp': queryCheckUnixTime, 'oar': activeOracleInstance.oar, 'connector': activeOracleInstance.connector, 'cbAddress': activeOracleInstance.account, 'http_myid': myid, 'contract_myid': myIdInitial, 'query_delay': time, 'query_arg': JSON.stringify(formula), 'query_datasource': ds, 'contract_address': cAddr, 'event_tx': eventTx, 'block_tx_hash': blockHashTx, 'proof_type': proofType, 'gas_limit': gasLimit}, function (err, res) {
         if (err !== null) logger.error('query db create error', err)
@@ -919,7 +930,7 @@ function queryComplete (gasLimit, myid, result, proof, contractAddr, proofType) 
           updateQuery(callbackObj, null, err)
           return logger.error('callback tx error, contract myid: ' + myid, err)
         }
-        logger.info('contract ' + contractAddr + ' __callback tx confirmed, transaction hash:', contract.transactionHash, callbackObj)
+        logger.info('contract ' + contractAddr + ' __callback tx sent, transaction hash:', contract.transactionHash, callbackObj)
         updateQuery(callbackObj, contract, null)
       })
     })
@@ -1040,7 +1051,7 @@ process.on('exit', function () {
    activeOracleInstance.connector &&
    activeOracleInstance.oar &&
    activeOracleInstance.account) {
-    console.log('To load this instance again use: --instance latest')
+    console.log('To load this instance again: node bridge --instance ' + currentInstance)
   }
   console.log('Exiting...')
 })
