@@ -77,7 +77,6 @@ var defaultGas = 3000000
 var resumeQueries = false
 var skipQueries = false
 var confirmations = 12
-var reorgRunning = false
 var latestBlockNumber = -1
 var isTestRpc = false
 var reorgInterval = []
@@ -237,6 +236,7 @@ if (ops['disable-deterministic-oar']) {
 }
 
 var oraclizeConfiguration = {
+  'latest_block_number': -1,
   'oar': ops.oar,
   'node': {
     'main': defaultnode,
@@ -672,6 +672,8 @@ function runLog () {
   else console.log('\nPlease add this line to your contract constructor:\n\n' + 'OAR = OraclizeAddrResolverI(' + checksumOar + ');\n')
 
   BridgeLogManager = BridgeLogManager.init()
+  
+  var latestBlockMemory = activeOracleInstance.latestBlockNumber
 
   // listen for latest events
   listenToLogs()
@@ -689,6 +691,16 @@ function runLog () {
   keepNodeAlive()
 
   console.log('(Ctrl+C to exit)\n')
+
+  if (!isTestRpc && !ops.dev && latestBlockMemory !== -1) {
+    var latestBlockTemp = BlockchainInterface().inter.blockNumber
+    if (latestBlockTemp > latestBlockMemory) {
+      logger.info('latest block seen:', latestBlockMemory, '- processing', (latestBlockTemp - latestBlockMemory), 'new blocks')
+      BridgeLogManager.fetchLogsByBlock(latestBlockMemory, latestBlockTemp)
+    }
+  }
+
+  activeOracleInstance.latestBlockNumber = BlockchainInterface().inter.blockNumber
 
   processPendingQueries()
 
@@ -713,16 +725,13 @@ function reorgListen (from) {
     var initialBlock = from || BlockchainInterface().inter.blockNumber - (confirmations * 2)
     var prevBlock = -1
     var latestBlock = -1
-    reorgRunning = false
     reorgInterval = setInterval(function () {
       try {
-        if (reorgRunning === true) return
         latestBlock = BlockchainInterface().inter.blockNumber
         if (prevBlock === -1) prevBlock = latestBlock
         if (latestBlock > prevBlock && prevBlock !== latestBlock && (latestBlock - initialBlock) > confirmations) {
           prevBlock = latestBlock
-          reorgRunning = true
-          BridgeLogManager.fetchLogsByBlock(initialBlock, initialBlock, true)
+          BridgeLogManager.fetchLogsByBlock(initialBlock, initialBlock)
           initialBlock += 1
         }
       } catch (e) {
@@ -812,6 +821,7 @@ function handleLog (data) {
     if (ops.dev !== true && myIdList.indexOf(myIdInitial) > -1) return
     myIdList.push(myIdInitial)
     latestBlockNumber = BlockchainInterface().inter.blockNumber
+    activeOracleInstance.latestBlockNumber = latestBlockNumber
     if (typeof data.removed !== 'undefined' && data.removed === true) return logger.error('this log was removed because of orphaned block, rejected tx or re-org, skipping...')
     var myid = myIdInitial
     var cAddr = data['sender']
@@ -977,7 +987,7 @@ function manageErrors (err) {
             logger.info('restarting logs...')
 
             // chain re-org listen
-            reorgListen()
+            reorgListen(latestBlockNumber)
           })
         }
       } catch (e) {
@@ -1051,6 +1061,10 @@ process.on('exit', function () {
    activeOracleInstance.connector &&
    activeOracleInstance.oar &&
    activeOracleInstance.account) {
+    var oracleInstancePath = path.resolve('./config/instance/', currentInstance)
+    var oracleInstanceTemp = JSON.parse(fs.readFileSync(oracleInstancePath).toString())
+    oracleInstanceTemp.latest_block_number = activeOracleInstance.latestBlockNumber
+    fs.writeFileSync(oracleInstancePath, JSON.stringify(oracleInstanceTemp, null, 4))
     console.log('To load this instance again: node bridge --instance ' + currentInstance)
   }
   console.log('Exiting...')
