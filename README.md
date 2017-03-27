@@ -3,23 +3,23 @@ This tool enables any non-public blockchain instance to interact with the Oracli
 
 _Please note that at this point this tool is still **experimental** and subject to change without notice._
 
-###Requirements
+### Requirements
 - node version **>= 5.0.0 < 7.0.0** (& npm)
 
 Suggested version: node 6.9.1
 
-####Note
+#### Note
 (on Ubuntu)
 
 run `sudo apt-get install build-essential -y`
 
-###Install
+### Install
 ```
 npm install
 ```
 
 
-###How to use
+### How to use
 
 You have 2 options:
  * [active mode](#active-mode) (deploy and query contracts using one account on your main node) [DEFAULT]
@@ -32,7 +32,7 @@ After you have correctly deployed the address resolver and the connector on your
 
 see also [optional flags](#optional-flags)
 
-####Active mode
+#### Active mode
 
 ```
 node bridge -H localhost:8545 -a 1
@@ -40,7 +40,7 @@ node bridge -H localhost:8545 -a 1
 (deploy contracts using the account 1 found on the localhost:8545 node)
 
 
-####Broadcast mode
+#### Broadcast mode
 
 Generate a new local address:
 
@@ -57,7 +57,7 @@ node bridge -H localhost:8545 --broadcast -a 0
 (load the first account in your keys.json file (index n.0) and deploy contracts (txs broadcasted to localhost:8545 node))
 
 
-####Add a custom address resolver
+#### Add a custom address resolver
 
 Add `OAR = OraclizeAddrResolverI(EnterYourOarCustomAddress);` to your contract constructor, example:
 
@@ -78,7 +78,14 @@ contract test() {
 
 **Note:** The address chosen will be used to deploy all the Oraclize contracts, **make sure to not deploy contracts that use Oraclize on the same address.**
 
-###Optional flags
+
+### How to update the bridge
+
+If a new version is detected you can run `npm run update` to automatically donwload and install the latest version from github.
+
+
+
+### Optional flags
 
 * optional:
   * `--broadcast --new` : generate a new local address (private key automatically saved in ./config/instance/keys.json), and deploy contracts using the new address
