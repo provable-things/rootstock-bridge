@@ -1,6 +1,6 @@
 {
   "name": "rootstock-bridge",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Indipendent bridge to link any Rootstock network with the Oraclize engine",
   "main": "bridge.js",
   "dependencies": {
