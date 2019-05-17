@@ -1,3 +1,7 @@
+# Deprecated
+
+This repo should not be used. The ethereum-bridge is capable of running on RSK networks out of the box now.
+
 ## Description
 This tool enables any non-public blockchain instance to interact with the Oraclize service.
 
